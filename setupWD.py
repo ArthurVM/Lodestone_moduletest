@@ -2,7 +2,7 @@
 junky and primitive install module for Lodestone_modtest
 """
 
-from os import kill, path
+from os import kill, path, chdir, getcwd, path
 import sys
 import argparse
 from signal import alarm, signal, SIGALRM, SIGKILL
@@ -98,45 +98,62 @@ class command():
 
 def setupWD(args):
     """
+    Constructs the testing environment.
     """
 
+    ## download lodestone from git
     gitline = "git clone https://github.com/Pathogen-Genomics-Cymru/tb-pipeline.git"
     command(gitline).run_comm(0)
 
+    ## prepare kraken2 database
     if not args.krakenDB:
-        getline = "wget https://genome-idx.s3.amazonaws.com/kraken/k2_standard_16gb_20200919.tar.gz"
+        print("Downloading Kraken2 DB from https://genome-idx.s3.amazonaws.com/kraken/k2_standard_16gb_20200919.tar.gz ...")
+        getline = "curl -fsSL https://genome-idx.s3.amazonaws.com/kraken/k2_standard_16gb_20200919.tar.gz | tar -xz"
+        command(getline).run_comm(0)
     else:
         lnline = f"ln -s {args.krakenDB} ./"
         command(lnline).run_comm(0)
 
+    ## prepare bowtie2 database
     if not args.bowtieIndex:
-        getline = "wget ftp://ftp.ccb.jhu.edu/pub/data/bowtie2_indexes/hg19_1kgmaj_bt2.zip"
+        print("Downloading bowtie2 DB from ftp://ftp.ccb.jhu.edu/pub/data/bowtie2_indexes/hg19_1kgmaj_bt2.zip ...")
+        getline = "curl -fsSL ftp://ftp.ccb.jhu.edu/pub/data/bowtie2_indexes/hg19_1kgmaj_bt2.zip -o hg19_1kgmaj_bt2.zip ; unzip hg19_1kgmaj_bt2.zip"
+        command(getline).run_comm(0)
     else:
         lnline = f"ln -s {args.bowtieIndex} ./"
         command(lnline).run_comm(0)
 
-    datalnline = f"ln -s {args.testdata}"
+    ## link datasets to module test directory
+    datalnline = f"ln -s {args.testdata} ./datasets"
     command(datalnline).run_comm(0)
 
+    ## link main scripts to module test directory
+    mainlnline = f"ln -s {getcwd()}/testing_modules/mainscripts/* ./tb-pipeline/"
+    command(mainlnline).run_comm(0)
+
+    ## link module scripts to module test directory
+    modlnline = f"ln -s {getcwd()}/testing_modules/ ./tb-pipeline/"
+    command(modlnline).run_comm(0)
+
     if args.buildSingularityimg:
-        bd = os.getcwd()
-        os.chdir("./tb-pipeline/singularity/")
+        bd = getcwd()
+        chdir("./tb-pipeline/singularity/")
         buildline = "bash singularity_build.sh"
         command(buildline).run_comm(0)
-        os.chdir(bd)
+        chdir(bd)
 
     print("INSTALLATION FINISHED. Could have gone well, could have been catastrophic. Good luck.")
 
 def isDir(dirpath):
     """ checks directory exists
     """
-    if not os.path.isdir(dirpath):
+    if not path.isdir(dirpath):
 
         msg = "{0} is not a directory".format(dirpath)
         raise argparse.ArgumentTypeError(msg)
 
     else:
-        return os.path.abspath(os.path.realpath(os.path.expanduser(dirpath)))
+        return path.abspath(path.realpath(path.expanduser(dirpath)))
 
 def parse_args(argv):
 
