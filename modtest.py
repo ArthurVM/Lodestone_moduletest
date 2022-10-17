@@ -25,9 +25,10 @@ def runtest(args, tmDir):
 
     rl2 = f"--unmix_myco no \
      --output_dir {args.test_module}_test \
-     --kraken_db {os.path.join(cwd, 'k2_standard_16gb_20200919/')} \
+     --kraken_db {os.path.join(cwd, 'k2_pluspf_16gb_20210517/')} \
      --bowtie2_index {os.path.join(cwd, 'hg19_1kgmaj/')} \
-     --bowtie_index_name hg19_1kgmaj"
+     --bowtie_index_name hg19_1kgmaj \
+     --afanc_myco_db {os.path.join(cwd, 'Mycobacteriaciae_DB_3.0/')}"
 
     runline = f"{rl1} {pattern} {rl2}"
     print(runline)

@@ -6,6 +6,7 @@ nextflow.enable.dsl=2
 // import subworkflows
 include {preprocessing} from './workflows/preprocessing.nf'
 include {tm09} from './testing_modules/workflows/TM09.nf'
+include {getversion} from './workflows/getversion.nf'
 
 /*
  ANSI escape codes to allow colour-coded output messages
@@ -33,20 +34,24 @@ Produces as output one directory per sample, containing the relevant reports & a
 
 Mandatory and conditional parameters:
 ------------------------------------------------------------------------
---input_dir           directory containing fastq OR bam files. Workflow will process one or the other, so don't mix
---filetype	      file type in input_dir. One of either "fastq" or "bam". fastq files can be gzipped and do not
+--input_dir           Directory containing fastq OR bam files. Workflow will process one or the other, so don't mix
+--filetype	      File type in input_dir. One of either "fastq" or "bam". fastq files can be gzipped and do not
                       have to literally take the form "*.fastq"; see --pattern
---pattern             regex to match files in input_dir, e.g. "*_R{1,2}.fq.gz". Only mandatory if --filetype is "fastq"
---output_dir          output directory, in which will be created subdirectories matching base name of fastq/bam files
---unmix_myco	      do you want to disambiguate mixed-mycobacterial samples by read alignment? One of "yes" or "no"
-	              if "yes" workflow will remove reads mapping to any minority mycobacterial genomes but in doing so
+--pattern             Regex to match files in input_dir, e.g. "*_R{1,2}.fq.gz". Only mandatory if --filetype is "fastq"
+--output_dir          Output directory, in which will be created subdirectories matching base name of fastq/bam files
+--unmix_myco	      Do you want to disambiguate mixed-mycobacterial samples by read alignment? One of "yes" or "no"
+	              If "yes" workflow will remove reads mapping to any minority mycobacterial genomes but in doing so
                       WILL ALMOST CERTAINLY ALSO reduce coverage of the principal species
-	              if "no" then mixed-mycobacterial samples will be left alone. Mixtures of mycobacteria + non-mycobacteria
+	              If "no" then mixed-mycobacterial samples will be left alone. Mixtures of mycobacteria + non-mycobacteria
                       will still be disambiguated
---kraken_db           directory containing Kraken2 database files (obtain from https://benlangmead.github.io/aws-indexes/k2)
---bowtie2_index       directory containing Bowtie2 index (obtain from ftp://ftp.ccb.jhu.edu/pub/data/bowtie2_indexes/hg19_1kgmaj_bt2.zip
+--kraken_db           Directory containing Kraken2 database files (obtain from https://benlangmead.github.io/aws-indexes/k2)
+--bowtie2_index       Directory containing Bowtie2 index (obtain from ftp://ftp.ccb.jhu.edu/pub/data/bowtie2_indexes/hg19_1kgmaj_bt2.zip
                       This is the Langmead lab pre-built major-allele-SNP reference; see https://github.com/BenLangmead/bowtie-majref)
---bowtie_index_name   name of the bowtie index, e.g. hg19_1kgmaj
+--bowtie_index_name   Name of the bowtie index, e.g. hg19_1kgmaj
+--vcfmix	      Run VFCMIX "yes" or "no". Should be set to "no" for synthetic samples
+--gnomonicus          Run gnomon "yes" or "no"
+--amr_cat             Path to the AMR catalogue (https://github.com/oxfordmmm/tuberculosis_amr_catalogues is at /tuberculosis_amr_catalogues
+                      in the vcfpredict container)
 
 Optional parameters:
 ------------------------------------------------------------------------
@@ -104,6 +109,12 @@ if ( ( params.unmix_myco != "yes" ) && ( params.unmix_myco != "no" ) ) {
 if ( ( params.species != "null" ) && ( params.species != "abscessus" ) && ( params.species != "africanum" ) && ( params.species != "avium" ) && ( params.species != "bovis" ) && ( params.species != "chelonae" ) && ( params.species != "chimaera" ) && ( params.species != "fortuitum" ) && ( params.species != "intracellulare" ) && ( params.species != "kansasii" ) && ( params.species != "tuberculosis" ) ) {
     exit 1, "error: --species is optional, but if used should be one of either abscessus, africanum, avium, bovis, chelonae, chimaera, fortuitum, intracellulare, kansasii, tuberculosis"
 }
+if ( params.mykrobe == "yes") {
+    speciation_tool = "Mykrobe"
+}
+else {
+    speciation_tool = "Afanc"
+}
 
 log.info """
 ========================================================================
@@ -120,6 +131,11 @@ Parameters used:
 --bowtie2_index         ${params.bowtie2_index}
 --bowtie_index_name     ${params.bowtie_index_name}
 --species		${params.species}
+--vcfmix		${params.vcfmix}
+--gnomonicus		${params.gnomonicus}
+--amr_cat		${params.amr_cat}
+
+Speciation tool in final report:    ${speciation_tool}
 
 Runtime data:
 ------------------------------------------------------------------------
@@ -160,9 +176,17 @@ workflow {
     krakenDB = Channel.fromPath( "${params.kraken_db}/*.k2d" )
     bowtie_dir = Channel.fromPath( "${params.bowtie2_index}/*.bt2" )
 
+
     // call preprocressing subworkflow
     main:
-      preprocessing(input_files, krakenDB, bowtie_dir)
+
+      // GETVERSION SUB-WORKFLOW
+      getversion()
+
+      // PREPROCESSING SUB-WORKFLOW
+      input_files_vjson = input_files.combine(getversion.out.getversion_json)
+
+      preprocessing(input_files_vjson, krakenDB, bowtie_dir, params.afanc_myco_db)
 
       if ( params.unmix_myco == "yes" ) {
           clockwork_seqs = preprocessing.out.decontam_seqs
